@@ -38,7 +38,7 @@ import android.view.SurfaceHolder;
 // Original code provided by Robert Green
 // http://www.rbgrn.net/content/354-glsurfaceview-adapted-3d-live-wallpapers
 public class GLWallpaperService extends WallpaperService {
-	private static final String TAG = "GLWallpaperService";
+	private static final String TAG = "GLWallpaperService";	
 
 	@Override
 	public Engine onCreateEngine() {
@@ -54,7 +54,8 @@ public class GLWallpaperService extends WallpaperService {
 		private GLSurfaceView.EGLContextFactory mEGLContextFactory;
 		private GLSurfaceView.EGLWindowSurfaceFactory mEGLWindowSurfaceFactory;
 		private GLSurfaceView.GLWrapper mGLWrapper;
-		private int mDebugFlags;
+		private int mDebugFlags;		
+		private int mEGLContextClientVersion;
 
 		public GLEngine() {
 			super();
@@ -122,10 +123,10 @@ public class GLWallpaperService extends WallpaperService {
 		public void setRenderer(GLSurfaceView.Renderer renderer) {
 			checkRenderThreadState();
 			if (mEGLConfigChooser == null) {
-				mEGLConfigChooser = new SimpleEGLConfigChooser(true);
+				mEGLConfigChooser = new SimpleEGLConfigChooser(true, mEGLContextClientVersion);
 			}
 			if (mEGLContextFactory == null) {
-				mEGLContextFactory = new DefaultContextFactory();
+				mEGLContextFactory = new DefaultContextFactory(mEGLContextClientVersion);
 			}
 			if (mEGLWindowSurfaceFactory == null) {
 				mEGLWindowSurfaceFactory = new DefaultWindowSurfaceFactory();
@@ -150,13 +151,18 @@ public class GLWallpaperService extends WallpaperService {
 		}
 
 		public void setEGLConfigChooser(boolean needDepth) {
-			setEGLConfigChooser(new SimpleEGLConfigChooser(needDepth));
+			setEGLConfigChooser(new SimpleEGLConfigChooser(needDepth, mEGLContextClientVersion));
 		}
 
 		public void setEGLConfigChooser(int redSize, int greenSize, int blueSize, int alphaSize, int depthSize,
 				int stencilSize) {
 			setEGLConfigChooser(new ComponentSizeChooser(redSize, greenSize, blueSize, alphaSize, depthSize,
-					stencilSize));
+					stencilSize, mEGLContextClientVersion));
+		}
+		
+		public void setEGLContextClientVersion(int version) {
+		    checkRenderThreadState();
+		    mEGLContextClientVersion = version;
 		}
 
 		public void setRenderMode(int renderMode) {
@@ -245,9 +251,18 @@ interface EGLContextFactory extends GLSurfaceView.EGLContextFactory {
 }
 
 class DefaultContextFactory implements GLSurfaceView.EGLContextFactory {
-
+	private static final int EGL_CONTEXT_CLIENT_VERSION = 0x3098;
+	private int eglContextClientVersion;
+	
+	DefaultContextFactory(int eglContextClientVersion) {
+		this.eglContextClientVersion = eglContextClientVersion;
+	}
+	
 	public EGLContext createContext(EGL10 egl, EGLDisplay display, EGLConfig config) {
-		return egl.eglCreateContext(display, config, EGL10.EGL_NO_CONTEXT, null);
+		int[] attrib_list = {EGL_CONTEXT_CLIENT_VERSION, eglContextClientVersion,
+                EGL10.EGL_NONE };
+		return egl.eglCreateContext(display, config, EGL10.EGL_NO_CONTEXT,
+				eglContextClientVersion != 0 ? attrib_list : null);
 	}
 
 	public void destroyContext(EGL10 egl, EGLDisplay display, EGLContext context) {
@@ -841,38 +856,66 @@ interface EGLConfigChooser extends GLSurfaceView.EGLConfigChooser {
 }
 
 abstract class BaseConfigChooser implements GLSurfaceView.EGLConfigChooser {
-	public BaseConfigChooser(int[] configSpec) {
-		mConfigSpec = configSpec;
-	}
+	private int eglContextClientVersion;
+	
+	public BaseConfigChooser(int[] configSpec, int eglContextClientVersion) {
+		this.eglContextClientVersion = eglContextClientVersion;
+        mConfigSpec = filterConfigSpec(configSpec);        
+    }
 
-	public EGLConfig chooseConfig(EGL10 egl, EGLDisplay display) {
-		int[] num_config = new int[1];
-		egl.eglChooseConfig(display, mConfigSpec, null, 0, num_config);
+    public EGLConfig chooseConfig(EGL10 egl, EGLDisplay display) {
+        int[] num_config = new int[1];
+        if (!egl.eglChooseConfig(display, mConfigSpec, null, 0,
+                num_config)) {
+            throw new IllegalArgumentException("eglChooseConfig failed");
+        }
 
-		int numConfigs = num_config[0];
+        int numConfigs = num_config[0];
 
-		if (numConfigs <= 0) {
-			throw new IllegalArgumentException("No configs match configSpec");
-		}
+        if (numConfigs <= 0) {
+            throw new IllegalArgumentException(
+                    "No configs match configSpec");
+        }
 
-		EGLConfig[] configs = new EGLConfig[numConfigs];
-		egl.eglChooseConfig(display, mConfigSpec, configs, numConfigs, num_config);
-		EGLConfig config = chooseConfig(egl, display, configs);
-		if (config == null) {
-			throw new IllegalArgumentException("No config chosen");
-		}
-		return config;
-	}
+        EGLConfig[] configs = new EGLConfig[numConfigs];
+        if (!egl.eglChooseConfig(display, mConfigSpec, configs, numConfigs,
+                num_config)) {
+            throw new IllegalArgumentException("eglChooseConfig#2 failed");
+        }
+        EGLConfig config = chooseConfig(egl, display, configs);
+        if (config == null) {
+            throw new IllegalArgumentException("No config chosen");
+        }
+        return config;
+    }
 
-	abstract EGLConfig chooseConfig(EGL10 egl, EGLDisplay display, EGLConfig[] configs);
+    abstract EGLConfig chooseConfig(EGL10 egl, EGLDisplay display,
+            EGLConfig[] configs);
 
-	protected int[] mConfigSpec;
+    protected int[] mConfigSpec;
+
+    private int[] filterConfigSpec(int[] configSpec) {
+        if (eglContextClientVersion != 2) {
+            return configSpec;
+        }
+        /* We know none of the subclasses define EGL_RENDERABLE_TYPE.
+         * And we know the configSpec is well formed.
+         */
+        int len = configSpec.length;
+        int[] newConfigSpec = new int[len + 2];
+        System.arraycopy(configSpec, 0, newConfigSpec, 0, len-1);
+        newConfigSpec[len-1] = EGL10.EGL_RENDERABLE_TYPE;
+        newConfigSpec[len] = 4; /* EGL_OPENGL_ES2_BIT */
+        newConfigSpec[len+1] = EGL10.EGL_NONE;
+        return newConfigSpec;
+    }
+    
 	public static class ComponentSizeChooser extends BaseConfigChooser {
 		public ComponentSizeChooser(int redSize, int greenSize, int blueSize, int alphaSize, int depthSize,
-				int stencilSize) {
+				int stencilSize, int eglContextClientVersion) {
 			super(new int[] { EGL10.EGL_RED_SIZE, redSize, EGL10.EGL_GREEN_SIZE, greenSize, EGL10.EGL_BLUE_SIZE,
 					blueSize, EGL10.EGL_ALPHA_SIZE, alphaSize, EGL10.EGL_DEPTH_SIZE, depthSize, EGL10.EGL_STENCIL_SIZE,
-					stencilSize, EGL10.EGL_NONE });
+					stencilSize, EGL10.EGL_NONE }, eglContextClientVersion);
 			mValue = new int[1];
 			mRedSize = redSize;
 			mGreenSize = greenSize;
@@ -928,8 +971,8 @@ abstract class BaseConfigChooser implements GLSurfaceView.EGLConfigChooser {
 	 *
 	 */
 	public static class SimpleEGLConfigChooser extends ComponentSizeChooser {
-		public SimpleEGLConfigChooser(boolean withDepthBuffer) {
-			super(4, 4, 4, 0, withDepthBuffer ? 16 : 0, 0);
+		public SimpleEGLConfigChooser(boolean withDepthBuffer, int eglContextClientVersion) {
+			super(4, 4, 4, 0, withDepthBuffer ? 16 : 0, 0, eglContextClientVersion);
 			// Adjust target values. This way we'll accept a 4444 or
 			// 555 buffer if there's no 565 buffer available.
 			mRedSize = 5;
