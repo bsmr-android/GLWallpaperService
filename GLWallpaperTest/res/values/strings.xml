@@ -6,10 +6,13 @@
 	<string name="description">An OpenGL live wallpaper</string>
 
 	<string name="nehe_lesson_02_label">GLWS - NeHe Lesson 02</string>
-	<string name="nehe_lesson_02_description">A white squre and triangle</string>
+	<string name="nehe_lesson_02_description">A white square and triangle</string>
 
 	<string name="nehe_lesson_08_label">GLWS - NeHe Lesson 08</string>
-	<string name="nehe_lesson_08_description">A rotating transparent cube.</string>
+	<string name="nehe_lesson_08_description">A rotating transparent cube</string>
+	
+	<string name="logles_lesson_02_label">Learn OpenGL ES Lesson Two</string>
+	<string name="logles_lesson_02_description">Some cubes and simple lighting</string>
 
 	<string name="settings_title">Lesson Eight Wallpaper settings</string>
 	<string-array name="textureitems">
