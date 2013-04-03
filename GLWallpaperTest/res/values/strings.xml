@@ -12,7 +12,8 @@
 	<string name="nehe_lesson_08_description">A rotating transparent cube</string>
 	
 	<string name="logles_lesson_02_label">Learn OpenGL ES Lesson Two</string>
-	<string name="logles_lesson_02_description">Some cubes and simple lighting</string>
+	<string name="logles_lesson_02_label_2">Learn OpenGL ES Lesson Two (GLSurfaceView)</string>
+	<string name="logles_lesson_02_description">Some cubes and simple lighting</string>			
 
 	<string name="settings_title">Lesson Eight Wallpaper settings</string>
 	<string-array name="textureitems">
